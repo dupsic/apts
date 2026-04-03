@@ -4,75 +4,77 @@
 
 using namespace std;
 
-const int TABLE_SIZE = 20011; // Pirmskaitlis vārdiem un skaitļiem
+const int TABLE_SIZE = 20011;
 
 struct Recenzents {
     string vards;
     int pseidonimi[50];
     int skaits = 0;
-    Recenzents* next = nullptr; // Kolīzijām vārdu tabulā
+    Recenzents* next = nullptr;
 };
 
 struct PseidonimaMezgla {
     int vertiba;
     Recenzents* ipasnieks;
-    PseidonimaMezgla* next = nullptr; // Kolīzijām skaitļu tabulā
+    PseidonimaMezgla* next = nullptr;
 };
 
 Recenzents* vardsTabula[TABLE_SIZE] = {nullptr};
 PseidonimaMezgla* skaitlisTabula[TABLE_SIZE] = {nullptr};
 
 // Hash funkcijas
-int hashV(string s) {
-    unsigned int h = 0;
-    for (char c : s) h = h * 31 + c;
-    return h % TABLE_SIZE;
+int hashVardam(string vards) {
+    unsigned int hashSumma = 0;
+    for (char c : vards) hashSumma = hashSumma * 31 + c;
+    return hashSumma % TABLE_SIZE;
 }
 
-int hashS(int x) {
-    unsigned int ux = (x < 0) ? -x : x;
-    return ux % TABLE_SIZE;
+int hashSkaitlim(int skaitlis) {
+    unsigned int pozitivsSkaitlis = (skaitlis < 0) ? -skaitlis : skaitlis;
+    return pozitivsSkaitlis % TABLE_SIZE;
 }
 
-// Funkcija, lai pārbaudītu, vai pseidonīms jau pieder šim recenzentam
-bool jauIrSim(Recenzents* r, int ps) {
+// parbaude vai pseidonims jau pieder sim recenzentam
+bool jauPieder(Recenzents* r, int pseidonims) {
     if (!r) return false;
     for (int i = 0; i < r->skaits; i++) {
-        if (r->pseidonimi[i] == ps) return true;
+        if (r->pseidonimi[i] == pseidonims) return true;
     }
     return false;
 }
 
 // Funkcija, lai atrastu, kam pieder pseidonīms
-Recenzents* kuraPseidonims(int ps) {
-    int idx = hashS(ps);
-    PseidonimaMezgla* temp = skaitlisTabula[idx];
+Recenzents* atrastIpasnieku(int pseidonims) {
+    int index = hashSkaitlim(pseidonims);
+    PseidonimaMezgla* temp = skaitlisTabula[index];
     while (temp) {
-        if (temp->vertiba == ps) return temp->ipasnieks;
+        if (temp->vertiba == pseidonims) return temp->ipasnieks;
         temp = temp->next;
     }
     return nullptr;
 }
 
-void insert(string vards, int n, ifstream& in, ofstream& out) {
-    int vPs[100]; // Pagaidu masīvs nolasīšanai
-    for (int i = 0; i < n; i++) in >> vPs[i];
 
-    int vIdx = hashV(vards);
+
+void insert(string vards, int n, ifstream& in, ofstream& out) {
+    int pagaiduMasivs[100]; // Pagaidu masīvs nolasīšanai
+    for (int i = 0; i < n; i++) in >> pagaiduMasivs[i];
+
+    int vIdx = hashVardam(vards);
     Recenzents* r = vardsTabula[vIdx];
     while (r && r->vards != vards) r = r->next;
 
     // 1. Validācija
     int jauniUnikali = 0;
     for (int i = 0; i < n; i++) {
-        Recenzents* ipasnieks = kuraPseidonims(vPs[i]);
+        Recenzents* ipasnieks = atrastIpasnieku(pagaiduMasivs[i]);
         if (ipasnieks && ipasnieks != r) { out << "no" << endl; return; }
         
         // Pārbaudām, vai šis ir jauns pseidonīms (nav dublikāts ievadē vai esošajos)
         bool dublikatsIevade = false;
-        for (int j = 0; j < i; j++) if (vPs[i] == vPs[j]) dublikatsIevade = true;
+        for (int j = 0; j < i; j++) if (pagaiduMasivs[i] == pagaiduMasivs[j]) dublikatsIevade = true;
         
-        if (!dublikatsIevade && !jauIrSim(r, vPs[i])) jauniUnikali++;
+        if (!dublikatsIevade && !jauPieder(r, pagaiduMasivs[i])) jauniUnikali++;
     }
 
     int kopskaits = (r ? r->skaits : 0) + jauniUnikali;
@@ -87,11 +89,11 @@ void insert(string vards, int n, ifstream& in, ofstream& out) {
     }
 
     for (int i = 0; i < n; i++) {
-        if (!jauIrSim(r, vPs[i])) {
-            r->pseidonimi[r->skaits++] = vPs[i];
-            int sIdx = hashS(vPs[i]);
+        if (!jauPieder(r, pagaiduMasivs[i])) {
+            r->pseidonimi[r->skaits++] = pagaiduMasivs[i];
+            int sIdx = hashSkaitlim(pagaiduMasivs[i]);
             PseidonimaMezgla* pm = new PseidonimaMezgla;
-            pm->vertiba = vPs[i];
+            pm->vertiba = pagaiduMasivs[i];
             pm->ipasnieks = r;
             pm->next = skaitlisTabula[sIdx];
             skaitlisTabula[sIdx] = pm;
@@ -101,7 +103,7 @@ void insert(string vards, int n, ifstream& in, ofstream& out) {
 }
 
 void remove(int key, ofstream& out) {
-    int sIdx = hashS(key);
+    int sIdx = hashSkaitlim(key);
     PseidonimaMezgla* tempS = skaitlisTabula[sIdx];
     Recenzents* r = nullptr;
     while (tempS) {
@@ -114,7 +116,7 @@ void remove(int key, ofstream& out) {
     // Izdzēšam visus pseidonīmus no skaitļu tabulas
     for (int i = 0; i < r->skaits; i++) {
         int ps = r->pseidonimi[i];
-        int idx = hashS(ps);
+        int idx = hashSkaitlim(ps);
         PseidonimaMezgla *curr = skaitlisTabula[idx], *prev = nullptr;
         while (curr) {
             if (curr->vertiba == ps) {
@@ -128,7 +130,7 @@ void remove(int key, ofstream& out) {
     }
 
     // Izdzēšam no vārdu tabulas
-    int vIdx = hashV(r->vards);
+    int vIdx = hashVardam(r->vards);
     Recenzents *currV = vardsTabula[vIdx], *prevV = nullptr;
     while (currV) {
         if (currV->vards == r->vards) {
@@ -158,7 +160,7 @@ int main() {
             remove(k, out);
         } else if (cmd == 'L') {
             int k; in >> k;
-            Recenzents* r = kuraPseidonims(k);
+            Recenzents* r = atrastIpasnieku(k);
             if (r) out << r->vards << endl;
             else out << "no" << endl;
         }
