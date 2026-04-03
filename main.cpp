@@ -1,204 +1,167 @@
 #include <iostream>
 #include <fstream>
-#include <unordered_map>
+#include <string>
+
 using namespace std;
 
+const int TABLE_SIZE = 20011; // Pirmskaitlis vārdiem un skaitļiem
 
-const int TABLE_SIZE = 20011; 
-
-struct recenzents {
+struct Recenzents {
     string vards;
     int pseidonimi[50];
     int skaits = 0;
-    recenzents* next = nullptr; // Kolīzijām vārdu tabulā
+    Recenzents* next = nullptr; // Kolīzijām vārdu tabulā
 };
 
-// struktūra prieks atras meklesanas
-struct pseidonimaMezgla {
+struct PseidonimaMezgla {
     int vertiba;
-    recenzents* ipasnieks;      // Norāde uz galveno objektu (ietaupa atmiņu)
-    pseidonimaMezgla* next = nullptr; // Kolīzijām skaitļu tabulā
+    Recenzents* ipasnieks;
+    PseidonimaMezgla* next = nullptr; // Kolīzijām skaitļu tabulā
 };
 
-// Divas hash tabulas
-recenzents* vardsTabula[TABLE_SIZE];
-pseidonimaMezgla* skaitlisTabula[TABLE_SIZE];
+Recenzents* vardsTabula[TABLE_SIZE] = {nullptr};
+PseidonimaMezgla* skaitlisTabula[TABLE_SIZE] = {nullptr};
 
-// Hash funkcija vārdam (string)
-int hashVardam(string s) {
+// Hash funkcijas
+int hashV(string s) {
     unsigned int h = 0;
     for (char c : s) h = h * 31 + c;
     return h % TABLE_SIZE;
 }
 
-// Hash funkcija pseidonīmam (int)
-int hashSkaitlim(int x) {
-    return (x < 0 ? -x : x) % TABLE_SIZE;
+int hashS(int x) {
+    unsigned int ux = (x < 0) ? -x : x;
+    return ux % TABLE_SIZE;
 }
 
-void insert(string vards, int* jauniPseidonimi, int n) {
-    int vIdx = hashVardam(vards);
-    recenzents* r = vardsTabula[vIdx];
+// Funkcija, lai pārbaudītu, vai pseidonīms jau pieder šim recenzentam
+bool jauIrSim(Recenzents* r, int ps) {
+    if (!r) return false;
+    for (int i = 0; i < r->skaits; i++) {
+        if (r->pseidonimi[i] == ps) return true;
+    }
+    return false;
+}
 
-    // 1. Pārbaudām, vai recenzents jau eksistē
-    while (r != nullptr) {
-        if (r->vards == vards) break;
-        r = r->next;
+// Funkcija, lai atrastu, kam pieder pseidonīms
+Recenzents* kuraPseidonims(int ps) {
+    int idx = hashS(ps);
+    PseidonimaMezgla* temp = skaitlisTabula[idx];
+    while (temp) {
+        if (temp->vertiba == ps) return temp->ipasnieks;
+        temp = temp->next;
+    }
+    return nullptr;
+}
+
+void insert(string vards, int n, ifstream& in, ofstream& out) {
+    int vPs[100]; // Pagaidu masīvs nolasīšanai
+    for (int i = 0; i < n; i++) in >> vPs[i];
+
+    int vIdx = hashV(vards);
+    Recenzents* r = vardsTabula[vIdx];
+    while (r && r->vards != vards) r = r->next;
+
+    // 1. Validācija
+    int jauniUnikali = 0;
+    for (int i = 0; i < n; i++) {
+        Recenzents* ipasnieks = kuraPseidonims(vPs[i]);
+        if (ipasnieks && ipasnieks != r) { out << "no" << endl; return; }
+        
+        // Pārbaudām, vai šis ir jauns pseidonīms (nav dublikāts ievadē vai esošajos)
+        bool dublikatsIevade = false;
+        for (int j = 0; j < i; j++) if (vPs[i] == vPs[j]) dublikatsIevade = true;
+        
+        if (!dublikatsIevade && !jauIrSim(r, vPs[i])) jauniUnikali++;
     }
 
-    // 2. Ja neeksistē, izveidojam jaunu
-    if (r == nullptr) {
-        r = new recenzents;
+    int kopskaits = (r ? r->skaits : 0) + jauniUnikali;
+    if (kopskaits > 50) { out << "no" << endl; return; }
+
+    // 2. Izpilde
+    if (!r) {
+        r = new Recenzents;
         r->vards = vards;
         r->next = vardsTabula[vIdx];
         vardsTabula[vIdx] = r;
     }
 
-    // 3. Pievienojam jaunos pseidonīmus gan recenzentam, gan skaitļu tabulai
     for (int i = 0; i < n; i++) {
-        int ps = jauniPseidonimi[i];
-        
-        // Pievienojam recenzenta masīvā (ja ir vieta)
-        if (r->skaits < 50) {
-            r->pseidonimi[r->skaits++] = ps;
+        if (!jauIrSim(r, vPs[i])) {
+            r->pseidonimi[r->skaits++] = vPs[i];
+            int sIdx = hashS(vPs[i]);
+            PseidonimaMezgla* pm = new PseidonimaMezgla;
+            pm->vertiba = vPs[i];
+            pm->ipasnieks = r;
+            pm->next = skaitlisTabula[sIdx];
+            skaitlisTabula[sIdx] = pm;
         }
-
-        // Pievienojam skaitļu hash tabulā ātrai "L" meklēšanai
-        int sIdx = hashSkaitlim(ps);
-        pseidonimaMezgla* pm = new pseidonimaMezgla;
-        pm->vertiba = ps;
-        pm->ipasnieks = r; // Norāde uz to pašu recenzentu
-        pm->next = skaitlisTabula[sIdx];
-        skaitlisTabula[sIdx] = pm;
     }
+    out << "ok" << endl;
 }
 
-void lookup(int sk) {
-    int sIdx = hashSkaitlim(sk);
-    pseidonimaMezgla* temp = skaitlisTabula[sIdx];
-
-    while (temp != nullptr) {
-        if (temp->vertiba == sk) {
-            cout << temp->ipasnieks->vards << endl;
-            return;
-        }
-        temp = temp->next;
+void remove(int key, ofstream& out) {
+    int sIdx = hashS(key);
+    PseidonimaMezgla* tempS = skaitlisTabula[sIdx];
+    Recenzents* r = nullptr;
+    while (tempS) {
+        if (tempS->vertiba == key) { r = tempS->ipasnieks; break; }
+        tempS = tempS->next;
     }
-    cout << "NOT FOUND" << endl;
-}
-recenzents* vardsTabula[10007];
-pseidonimaMezgla* skaitlisTabula[10007];
-// const int TABLE_SIZE = 10000;
 
-// hash funkcija
-int hashFunction(string vards) {
-    int hash = 0;
-    for (char c : vards) hash += c;
-    return hash % TABLE_SIZE;
-}
+    if (!r) { out << "no" << endl; return; }
 
-void pievienot(string vards, int skaitlis) {
-    int idx = hashFunction(vards);
-    recenzents* temp = tabula[idx];
-
-    // Meklējam, vai jau ir
-    while (temp != nullptr) {
-        if (temp->vards == vards) {
-            if (temp->pseidonimuSkaits < 50) {
-                temp->pseidonimi[temp->pseidonimuSkaits++] = skaitlis;
+    // Izdzēšam visus pseidonīmus no skaitļu tabulas
+    for (int i = 0; i < r->skaits; i++) {
+        int ps = r->pseidonimi[i];
+        int idx = hashS(ps);
+        PseidonimaMezgla *curr = skaitlisTabula[idx], *prev = nullptr;
+        while (curr) {
+            if (curr->vertiba == ps) {
+                if (!prev) skaitlisTabula[idx] = curr->next;
+                else prev->next = curr->next;
+                delete curr;
+                break;
             }
-            return;
+            prev = curr; curr = curr->next;
         }
-        temp = temp->next;
     }
 
-    // Ja nav, taisām jaunu
-    recenzents* jaunais = new recenzents;
-    jaunais->vards = vards;
-    jaunais->pseidonimi[jaunais->pseidonimuSkaits++] = skaitlis;
-    jaunais->next = tabula[idx]; // Pieliek saraksta sākumā
-    tabula[idx] = jaunais;
-}
-void paraditPseidonimus(string vards) {
-    int idx = hashFunction(vards);
-    recenzents* temp = tabula[idx];
-
-    while (temp != nullptr) {
-        if (temp->vards == vards) {
-            cout << vards << " pseidonimi ir: ";
-            for (int i = 0; i < temp->pseidonimuSkaits; i++) {
-                cout << temp->pseidonimi[i] << " ";
-            }
-            cout << endl;
+    // Izdzēšam no vārdu tabulas
+    int vIdx = hashV(r->vards);
+    Recenzents *currV = vardsTabula[vIdx], *prevV = nullptr;
+    while (currV) {
+        if (currV->vards == r->vards) {
+            if (!prevV) vardsTabula[vIdx] = currV->next;
+            else prevV->next = currV->next;
+            delete currV;
+            out << "ok" << endl;
             return;
         }
-        temp = temp->next;
+        prevV = currV; currV = currV->next;
     }
-    cout << "Recenzents netika atrasts." << endl;
 }
 
 int main() {
-
-    ifstream input("reviewers.in");
-    ofstream output("reviewers.out");
-
-    
-    string vards; // recenzenta vards
-    int pseidonimuSkaits; 
-    int pseidonimi[50];
-    int pseidonims;
-    string line; // lai saprastu kad fails beidzas
-
-    // unordered_map<string, recenzents>* recenzenti = new unordered_map<string, recenzents>[10000];
+    ifstream in("reviewers.in");
+    ofstream out("reviewers.out");
 
 
-    char darbiba; // insert or delete or look
-    
-
-    while (input) {
-        input >> darbiba;
-        // cout << darbiba;
-        if (darbiba == 73){ // INSERT
-            input >> vards >> pseidonimuSkaits;
-            for (int i = 1; i<=pseidonimuSkaits;i++){
-                input >> pseidonims;
-                pievienot(vards, pseidonims);
-            }
-            paraditPseidonimus(vards);
-            output << "ok" << endl;
-
-            // vajag vel no?
+    char cmd;
+    while (in >> cmd) {
+        if (cmd == 'I') {
+            string v; int n;
+            in >> v >> n;
+            insert(v, n, in, out);
+        } else if (cmd == 'D') {
+            int k; in >> k;
+            remove(k, out);
+        } else if (cmd == 'L') {
+            int k; in >> k;
+            Recenzents* r = kuraPseidonims(k);
+            if (r) out << r->vards << endl;
+            else out << "no" << endl;
         }
-        else if (darbiba == 76) { // LOOK UP
-            cout << "meklejam" << pseidonims << endl;
-            input >> pseidonims; 
-            
-        }
-        // else if (darbiba == 68) { // DELETE
-        //     cout << "daram delete" << endl;
-        // }
-        // input >> darbiba;
     }
-
-    
-    // int pseidonims;
-    // if (darbiba == 73){
-    //     input >> darbiba >> vards >> arrayCount;
-    //     cout << vards;
-    //     cout << "Insert darbiba" << endl;
-    //     for (int i = 1; i <= arrayCount;i++) {
-    //         recenzents r;
-    //         input >> pseidonims;
-    //         // r.
-    //         // map = 
-    //         cout << vards << ": " << pseidonims << endl;
-
-    //         // array.push(map);
-    //     }
-    // }
-
-    // delete recenzenti;
-    input.close();
-    output.close();
     return 0;
 }
