@@ -141,7 +141,7 @@ void remove(int key, ofstream& out) {
         }
     }
 
-    // izdzesam no vārdu tabulas
+    // izdzesam no vardu tabulas
     int vardaIndekss = hashVardam(r->vards);
     Recenzents *pasreizejsVards = vardsTabula[vardaIndekss];
     Recenzents *ieprieksejsVards = nullptr;
